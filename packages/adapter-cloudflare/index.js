@@ -181,8 +181,13 @@ export default function (options = {}) {
 		emulate() {
 			// we want to invoke `getPlatformProxy` only once, but await it only when it is accessed.
 			// If we would await it here, it would hang indefinitely because the platform proxy only resolves once a request happens
+			/** @type {Promise<Awaited<ReturnType<typeof getPlatformProxy>>> | undefined} */
+			let get_proxy;
+			let disposed = false;
+
 			const get_emulated = async () => {
-				const proxy = await getPlatformProxy(options.platformProxy);
+				get_proxy ??= getPlatformProxy(options.platformProxy);
+				const proxy = await get_proxy;
 				const platform = {
 					env: proxy.env,
 					ctx: proxy.ctx,
@@ -209,6 +214,15 @@ export default function (options = {}) {
 				platform: async ({ prerender }) => {
 					emulated ??= await get_emulated();
 					return prerender ? emulated.prerender_platform : emulated.platform;
+				},
+				dispose: async () => {
+					// nothing was started if the platform was never accessed, and disposing twice
+					// is something both a server close and a build teardown can ask for
+					if (!get_proxy || disposed) return;
+					disposed = true;
+
+					const proxy = await get_proxy;
+					await proxy.dispose();
 				}
 			};
 		},

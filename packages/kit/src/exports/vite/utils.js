@@ -227,3 +227,30 @@ export function error_for_missing_config(feature_name, path, value) {
 		`
 	);
 }
+
+/**
+ * Ensures the adapter's emulator is disposed when the dev or preview server shuts down, so an
+ * adapter does not leak what it acquired in `emulate` -- a platform proxy holding a child
+ * process, for instance. Disposal runs even if the original `close` throws, and a disposal
+ * failure is logged rather than propagated, so it can neither mask nor be masked by a shutdown
+ * error.
+ *
+ * @param {import('vite').ViteDevServer | import('vite').PreviewServer} server
+ * @param {import('@sveltejs/kit').Emulator | undefined} emulator
+ */
+export function dispose_emulator_on_close(server, emulator) {
+	if (!emulator?.dispose) return;
+
+	const close = server.close.bind(server);
+	server.close = async () => {
+		try {
+			await close();
+		} finally {
+			try {
+				await emulator.dispose();
+			} catch (error) {
+				console.error(`Error disposing emulator: ${/** @type {any} */ (error)?.message ?? error}`);
+			}
+		}
+	};
+}
